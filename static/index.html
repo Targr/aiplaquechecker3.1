@@ -1,0 +1,588 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Plaque/Colony AI Counter (with Review)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    /* Editable variables */
+    :root {
+      --primary-bg-color: #050101;  /* Background color */
+      --primary-text-color: #B4DD13;    /* Primary text color */
+      --primary-btn-color: #B4DD13; /* Button color */
+      --highlight-color: #ffc107;   /* Highlight color */
+      --font-family: "Times New Roman", Times, serif;  /* Font family */
+      --font-size: 16px;            /* Default font size */
+      --panel-bg-color: #e9ecef;   /* NEW: card / bubble color */
+      --panel-border-color: #ced4da;
+      
+    }
+
+    /* Apply styles using the variables */
+    body { 
+      background: var(--primary-bg-color); 
+      padding-bottom: 40px; 
+      font-family: var(--font-family); 
+      font-size: var(--font-size);
+      color: var(--primary-text-color);
+    }
+    h1, h5 {
+      color: var(--primary-text-color);
+    }
+    .img-preview { 
+      max-width: 100%; 
+      height: auto; 
+      border: 1px solid #ccc; 
+      margin-top: 10px; 
+    }
+    pre { 
+      white-space: pre-wrap; 
+      word-wrap: break-word; 
+    }
+    .slider-container { 
+      text-align: center; 
+      margin-top: 20px; 
+    }
+    #batchImage { 
+      max-height: 500px; 
+      object-fit: contain; 
+    }
+    .color-checkbox { 
+      margin-right: 10px; 
+    }
+    #annotModal .modal-dialog { 
+      max-width: 900px; 
+    }
+    #annotCanvas { 
+      border: 1px solid #333; 
+      display: block; 
+      max-width: 100%; 
+    }
+    .box-list { 
+      max-height: 200px; 
+      overflow: auto; 
+    }
+    .box-item { 
+      border-bottom: 1px solid #eee; 
+      padding: 6px; 
+    }
+    .corrected-badge { 
+      font-size: 0.8rem; 
+      margin-left: 8px; 
+    }
+
+    /* Buttons */
+    .btn-primary, .btn-success, .btn-warning, .btn-danger, .btn-secondary {
+      background-color: var(--primary-btn-color);
+      border: none;
+    }
+    .btn-outline-secondary, .btn-sm {
+      border-color: #ccc;
+    }
+    .btn-outline-danger {
+      border-color: red;
+    }
+
+    /* Highlight for selected boxes */
+    .highlighted {
+      background-color: var(--highlight-color);
+    }
+  </style>
+</head>
+<body>
+<div class="container mt-4">
+  <h1 class="text-center mb-4">Plaque / Colony AI Counter — Review Mode</h1>
+
+  <div class="card mb-4">
+    <div class="card-body">
+      <h5>Single Image Processing</h5>
+      <form id="singleForm" onsubmit="return false;">
+        <div class="mb-2">
+          <label class="form-label">Upload Image or Take Photo</label>
+          <input class="form-control" type="file" name="image" required accept="image/*" capture="environment">
+        </div>
+
+        <div class="mb-3">
+          <label for="singleConfidence" class="form-label">
+            Detection Confidence: <span id="singleConfValue">0.25</span>
+          </label>
+          <input type="range" class="form-range" id="singleConfidence" min="0" max="1" step="0.01" value="0.25">
+        </div>
+
+        <div class="form-check mb-3">
+          <input class="form-check-input" type="checkbox" id="multiPlateSingle">
+          <label class="form-check-label" for="multiPlateSingle">Multiple Plates in this Image</label>
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label">(Optional) Select Colors to Count:</label><br>
+          <input type="checkbox" class="color-checkbox" value="red"> Red
+          <input type="checkbox" class="color-checkbox" value="green"> Green
+          <input type="checkbox" class="color-checkbox" value="blue"> Blue
+          <input type="checkbox" class="color-checkbox" value="yellow"> Yellow
+          <input type="checkbox" class="color-checkbox" value="orange"> Orange
+        </div>
+
+        <button id="singleProcessBtn" type="button" class="btn btn-primary mt-2 w-100">Process</button>
+      </form>
+      <div id="singleResult" class="mt-3"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-body">
+      <h5>Batch Processing</h5>
+      <form id="batchForm" onsubmit="return false;">
+        <div class="mb-2">
+          <label class="form-label">Upload Multiple Images</label>
+          <input class="form-control" type="file" name="images" multiple required accept="image/*">
+        </div>
+        <div class="mb-2">
+          <label class="form-label">Reference Images (Optional)</label>
+          <input class="form-control" type="file" name="references" multiple accept="image/*">
+        </div>
+
+        <div class="mb-3">
+          <label for="batchConfidence" class="form-label">Detection Confidence: <span id="batchConfValue">0.25</span></label>
+          <input type="range" class="form-range" id="batchConfidence" min="0" max="1" step="0.01" value="0.25">
+        </div>
+
+        <div class="form-check mb-3">
+          <input class="form-check-input" type="checkbox" id="multiPlateBatch">
+          <label class="form-check-label" for="multiPlateBatch">Multiple Plates in Each Image</label>
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label">Select Colors to Count:</label><br>
+          <input type="checkbox" class="color-checkbox" value="red"> Red
+          <input type="checkbox" class="color-checkbox" value="green"> Green
+          <input type="checkbox" class="color-checkbox" value="blue"> Blue
+          <input type="checkbox" class="color-checkbox" value="yellow"> Yellow
+          <input type="checkbox" class="color-checkbox" value="orange"> Orange
+        </div>
+
+        <button id="batchProcessBtn" type="button" class="btn btn-success mt-2 w-100">Process Batch</button>
+      </form>
+      <div id="batchResult" class="mt-3"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Annotation Modal -->
+<div class="modal fade" id="annotModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Review / Correct Detection — <span id="annotImageName"></span></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="row">
+          <div class="col-md-8">
+            <canvas id="annotCanvas"></canvas>
+            <div class="mt-2"><small>Instructions: Drag on the image to draw a new bounding box. Click a box to select it.</small></div>
+          </div>
+          <div class="col-md-4">
+            <div>
+              <label class="form-label">Label for new box / selected</label>
+              <select id="labelSelect" class="form-select"></select>
+            </div>
+            <div class="mt-2">
+              <button id="deleteBoxBtn" class="btn btn-danger btn-sm">Delete selected</button>
+              <button id="saveCorrectionBtn" class="btn btn-primary btn-sm ms-2">Save Correction</button>
+              <button id="cancelCorrectionBtn" class="btn btn-secondary btn-sm ms-2" data-bs-dismiss="modal">Cancel</button>
+            </div>
+            <hr>
+            <h6>Boxes</h6>
+            <div class="box-list" id="boxList"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* Wrap init in DOMContentLoaded and a try/catch so errors don't prevent handlers from attaching */
+document.addEventListener('DOMContentLoaded', () => {
+  try {
+    // --- small helpers ---
+    async function fetchJson(url, opts) {
+      const res = await fetch(url, opts);
+      if (!res.ok) {
+        const txt = await res.text();
+        throw new Error(txt || `HTTP ${res.status}`);
+      }
+      return res.json();
+    }
+    async function postFormData(url, formData) {
+      const res = await fetch(url, { method: 'POST', body: formData });
+      if (!res.ok) throw new Error(await res.text());
+      return res.json();
+    }
+    function getSelectedColors(container) {
+      return Array.from(container.querySelectorAll('.color-checkbox:checked')).map(cb => cb.value);
+    }
+
+    // --- globals & DOM refs (already present because DOMContentLoaded) ---
+    let CLASS_NAMES = [];
+    let CLASS_NAME_TO_ID = {};
+    const canvas = document.getElementById('annotCanvas');
+    let ctx = canvas ? canvas.getContext('2d') : null;
+    const boxListDiv = document.getElementById('boxList');
+    const labelSelect = document.getElementById('labelSelect');
+    const annotModalEl = document.getElementById('annotModal');
+    const bsModal = annotModalEl ? new bootstrap.Modal(annotModalEl, { backdrop: 'static', keyboard: false }) : null;
+    let canvasImage = new Image();
+    let canvasScale = 1;
+    let boxes = [];
+    let selectedBoxIdx = null;
+    let drawing = false, drawStart = null;
+    let singleMode = false, singleImageB64 = null, singleImageName = null;
+    let currentBatchIndex = null, lastBatchData = null;
+
+    // --- load classes ---
+    (async function loadClasses() {
+      try {
+        const data = await fetchJson('/api/classes');
+        CLASS_NAMES = data.classes || [];
+        CLASS_NAMES.forEach((n,i) => CLASS_NAME_TO_ID[n]=i);
+        populateLabelSelect();
+      } catch (e) {
+        console.warn('Could not load classes:', e);
+        CLASS_NAMES = ['feature']; CLASS_NAME_TO_ID = {'feature':0};
+        populateLabelSelect();
+      }
+    })();
+
+    function populateLabelSelect() {
+      if (!labelSelect) return;
+      labelSelect.innerHTML = '';
+      CLASS_NAMES.forEach((n,idx) => {
+        const opt = document.createElement('option');
+        opt.value = idx; opt.textContent = `${idx}: ${n}`;
+        labelSelect.appendChild(opt);
+      });
+    }
+
+    /* UI slider displays */
+    document.getElementById('singleConfidence').addEventListener('input', (ev) => {
+      document.getElementById('singleConfValue').textContent = ev.target.value;
+    });
+    document.getElementById('batchConfidence').addEventListener('input', (ev) => {
+      document.getElementById('batchConfValue').textContent = ev.target.value;
+    });
+
+    /* ---------- Processing logic (moved into callable functions) ---------- */
+    async function handleSingleProcess() {
+      const form = document.getElementById('singleForm');
+      const fileInput = form.querySelector('input[type="file"][name="image"]');
+      if (!fileInput.files || fileInput.files.length === 0) {
+        document.getElementById('singleResult').innerHTML = '<div class="text-danger">No image chosen</div>';
+        return;
+      }
+      const file = fileInput.files[0];
+      const conf = document.getElementById('singleConfidence').value;
+      const colors = JSON.stringify(getSelectedColors(form));
+      const multiPlate = document.getElementById('multiPlateSingle').checked;
+
+      if (!multiPlate) {
+        const fd = new FormData(form);
+        fd.set('confidence', conf);
+        fd.set('colors', colors);
+        fd.set('multi_plate', 'false');
+        const resultDiv = document.getElementById('singleResult');
+        resultDiv.innerHTML = 'Processing...';
+        try {
+          const resp = await postFormData('/api/process', fd);
+          renderResults(resp, resultDiv);
+        } catch (err) {
+          resultDiv.innerHTML = `<div class="text-danger">Error: ${err.message}</div>`;
+        }
+        return;
+      }
+
+      // multi-plate => get detections then open modal for manual splitting
+      try {
+        const fd = new FormData();
+        fd.append('image', file);
+        fd.append('confidence', conf);
+        fd.append('colors', colors);
+        fd.append('multi_plate', 'true');
+        document.getElementById('singleResult').innerHTML = 'Processing (getting detections)...';
+        const resp = await postFormData('/api/process', fd);
+        const imgB64 = resp.original_image_base64 || resp.annotated_image_base64;
+        const detections = resp.detections || [];
+        singleMode = true;
+        singleImageB64 = imgB64.startsWith('data:') ? imgB64.split(',')[1] : imgB64;
+        singleImageName = file.name || 'single_image';
+        openAnnotationModalForSingle(singleImageB64, singleImageName, detections);
+        document.getElementById('singleResult').innerHTML = `<div class="text-success">Detections loaded into editor (${detections.length}). Draw additional boxes if needed, then Save.</div>`;
+      } catch (err) {
+        document.getElementById('singleResult').innerHTML = `<div class="text-danger">Error getting detections: ${err.message}</div>`;
+      }
+    }
+
+    async function handleBatchProcess() {
+      const form = document.getElementById('batchForm');
+      const fd = new FormData(form);
+      fd.set('confidence', document.getElementById('batchConfidence').value);
+      fd.set('colors', JSON.stringify(getSelectedColors(form)));
+      fd.set('multi_plate', document.getElementById('multiPlateBatch').checked);
+      const resultDiv = document.getElementById('batchResult');
+      resultDiv.innerHTML = 'Processing...';
+      try {
+        const data = await postFormData('/api/batch', fd);
+        lastBatchData = data;
+        renderBatchReview(data);
+      } catch (err) {
+        resultDiv.innerHTML = `<div class="text-danger">Error: ${err.message}</div>`;
+      }
+    }
+
+    /* ---------- render helpers ---------- */
+    function renderResults(data, resultDiv) {
+      if (data.plates) {
+        let html = "<h6>Results per Plate:</h6>";
+        data.plates.forEach((plate, idx) => {
+          html += `<div class="mt-3 p-2 border rounded">
+            <h6>Plate ${idx+1}: ${plate.total_features} features</h6>
+            <img class="img-preview" src="data:image/png;base64,${plate.annotated_image_base64}">
+            <details><summary>Detections</summary><pre>${JSON.stringify(plate.detections, null, 2)}</pre></details>
+          </div>`;
+        });
+        resultDiv.innerHTML = html;
+      } else {
+        let imgHtml = `<img class="img-preview" src="data:image/png;base64,${data.annotated_image_base64}">`;
+        let detailsHtml = `<details><summary>Detections</summary><pre>${JSON.stringify(data.detections, null, 2)}</pre></details>`;
+        let colorHtml = '';
+        if (data.color_counts) colorHtml = '<ul>' + Object.entries(data.color_counts).map(([c,v])=>`<li>${c}: ${v}</li>`).join('') + '</ul>';
+        resultDiv.innerHTML = `<h6>Results:</h6>${imgHtml}${detailsHtml}${colorHtml}`;
+      }
+    }
+
+    function renderBatchReview(data) {
+      let currentIndex = 0;
+      const resultDiv = document.getElementById('batchResult');
+      function renderImage() {
+        const imgData = data.results[currentIndex];
+        const correctedBadge = imgData.__corrected ? `<span class="badge bg-success corrected-badge">Corrected</span>` : '';
+        let html = `
+          <div class="slider-container">
+            <div class="d-flex justify-content-between align-items-center">
+              <div>
+                <button class="btn btn-sm btn-outline-secondary me-2" id="prevBtn">Prev</button>
+                <button class="btn btn-sm btn-outline-secondary" id="nextBtn">Next</button>
+                <button class="btn btn-sm btn-warning ms-3" id="reviewBtn">Review / Correct</button>
+              </div>
+              <div><strong>${imgData.image_name || ('Image ' + (currentIndex+1))}</strong> ${correctedBadge}</div>
+            </div>
+            <div class="mt-3 text-center">
+              <img id="batchImage" class="img-preview" src="data:image/png;base64,${imgData.annotated_image_base64}">
+            </div>
+            <div id="batchInfo" class="mt-3 text-start"></div>
+            <div class="mt-2">
+              <a class="btn btn-sm btn-primary" href="data:text/csv;base64,${data.csv_base64}" download="results.csv">Download CSV</a>
+              <a class="btn btn-sm btn-secondary ms-2" href="data:application/zip;base64,${data.zip_base64}" download="annotated_images.zip">Download ZIP</a>
+              <button id="finalizeBtn" class="btn btn-sm btn-success ms-2">Finalize supplemental training data</button>
+            </div>
+          </div>
+        `;
+        resultDiv.innerHTML = html;
+        let infoHtml = `<details><summary>Detections (${imgData.total_features || (imgData.detections||[]).length})</summary><pre>${JSON.stringify(imgData.detections || [], null, 2)}</pre></details>`;
+        if (imgData.color_counts) infoHtml += '<ul>' + Object.entries(imgData.color_counts).map(([c,v])=>`<li>${c}: ${v}</li>`).join('') + '</ul>';
+        document.getElementById('batchInfo').innerHTML = infoHtml;
+
+        document.getElementById('prevBtn').onclick = () => { currentIndex = (currentIndex - 1 + data.results.length) % data.results.length; renderImage(); };
+        document.getElementById('nextBtn').onclick = () => { currentIndex = (currentIndex + 1) % data.results.length; renderImage(); };
+        document.getElementById('reviewBtn').onclick = () => openAnnotationModal(currentIndex);
+        document.getElementById('finalizeBtn').onclick = async () => {
+          try {
+            const resp = await fetchJson('/api/finalize_supplemental', { method: 'POST' });
+            alert(`Finalized supplemental data. Files moved: ${resp.moved || 0}`);
+          } catch (err) { alert('Error finalizing supplemental data: ' + err.message); }
+        };
+      }
+      renderImage();
+    }
+
+    /* ---------- Annotation modal + canvas logic (unchanged logic, defensive) ---------- */
+    function openAnnotationModal(batchIndex) {
+      singleMode = false;
+      currentBatchIndex = batchIndex;
+      const imgData = lastBatchData.results[batchIndex];
+      document.getElementById('annotImageName').textContent = imgData.image_name || ('Image ' + (batchIndex+1));
+      const imgB64 = imgData.original_image_base64 || imgData.annotated_image_base64;
+      canvasImage = new Image();
+      canvasImage.onload = () => {
+        const maxW = 800;
+        const ratio = Math.min(maxW / canvasImage.width, 1);
+        canvasScale = ratio;
+        if (canvas) { canvas.width = Math.round(canvasImage.width * canvasScale); canvas.height = Math.round(canvasImage.height * canvasScale); }
+        redrawCanvas();
+      };
+      canvasImage.src = "data:image/png;base64," + imgB64;
+      boxes = [];
+      (imgData.detections || []).forEach(d => {
+        if (!d.bbox) return;
+        const [x1,y1,x2,y2] = d.bbox;
+        const labelName = d.label || CLASS_NAMES[0];
+        const label_id = (labelName in CLASS_NAME_TO_ID) ? CLASS_NAME_TO_ID[labelName] : 0;
+        boxes.push({ x1,y1,x2,y2, label_id });
+      });
+      selectedBoxIdx = null;
+      updateBoxList();
+      redrawCanvas();
+      if (bsModal) bsModal.show();
+    }
+
+    function openAnnotationModalForSingle(imageB64, imageName, detections=[]) {
+      singleMode = true; currentBatchIndex = null; singleImageB64 = imageB64; singleImageName = imageName;
+      document.getElementById('annotImageName').textContent = imageName;
+      canvasImage = new Image();
+      canvasImage.onload = () => {
+        const maxW = 800;
+        const ratio = Math.min(maxW / canvasImage.width, 1);
+        canvasScale = ratio;
+        if (canvas) { canvas.width = Math.round(canvasImage.width * canvasScale); canvas.height = Math.round(canvasImage.height * canvasScale); }
+        redrawCanvas();
+      };
+      const src = imageB64.startsWith('data:') ? imageB64 : ("data:image/png;base64," + imageB64);
+      canvasImage.src = src;
+      boxes = [];
+      if (Array.isArray(detections)) {
+        detections.forEach(d => {
+          if (!d.bbox) return;
+          const [x1,y1,x2,y2] = d.bbox;
+          let label_id = 0; if (d.label && (d.label in CLASS_NAME_TO_ID)) label_id = CLASS_NAME_TO_ID[d.label];
+          boxes.push({ x1:Math.round(x1), y1:Math.round(y1), x2:Math.round(x2), y2:Math.round(y2), label_id });
+        });
+      }
+      selectedBoxIdx = null;
+      updateBoxList();
+      redrawCanvas();
+      if (bsModal) bsModal.show();
+    }
+
+    /* Canvas interactions */
+    if (canvas) {
+      canvas.addEventListener('mousedown', (ev) => {
+        const r = canvas.getBoundingClientRect();
+        const x = (ev.clientX - r.left) / canvasScale; const y = (ev.clientY - r.top) / canvasScale;
+        drawing = true; drawStart = { x, y };
+      });
+      canvas.addEventListener('mousemove', (ev) => {
+        if (!drawing) return;
+        const r = canvas.getBoundingClientRect();
+        const x = (ev.clientX - r.left) / canvasScale; const y = (ev.clientY - r.top) / canvasScale;
+        const x1 = Math.min(drawStart.x, x), y1 = Math.min(drawStart.y, y), x2 = Math.max(drawStart.x, x), y2 = Math.max(drawStart.y, y);
+        redrawCanvas();
+        if (ctx) { ctx.strokeStyle = 'lime'; ctx.lineWidth = 2; ctx.strokeRect(x1*canvasScale, y1*canvasScale, (x2-x1)*canvasScale, (y2-y1)*canvasScale); }
+      });
+      canvas.addEventListener('mouseup', (ev) => {
+        if (!drawing) return;
+        drawing = false;
+        const r = canvas.getBoundingClientRect();
+        const x = (ev.clientX - r.left) / canvasScale; const y = (ev.clientY - r.top) / canvasScale;
+        const x1 = Math.round(Math.min(drawStart.x, x)), y1 = Math.round(Math.min(drawStart.y, y));
+        const x2 = Math.round(Math.max(drawStart.x, x)), y2 = Math.round(Math.max(drawStart.y, y));
+        const label_id = parseInt((labelSelect && labelSelect.value) || 0);
+        if (Math.abs(x2-x1) > 4 && Math.abs(y2-y1) > 4) { boxes.push({ x1,y1,x2,y2,label_id }); selectedBoxIdx = boxes.length-1; }
+        updateBoxList(); redrawCanvas();
+      });
+      canvas.addEventListener('click', (ev) => {
+        const r = canvas.getBoundingClientRect();
+        const x = (ev.clientX - r.left) / canvasScale; const y = (ev.clientY - r.top) / canvasScale;
+        let found = null;
+        for (let i=boxes.length-1;i>=0;i--) { const b=boxes[i]; if (x>=b.x1 && x<=b.x2 && y>=b.y1 && y<=b.y2) { found=i; break; } }
+        if (found!==null) { selectedBoxIdx = found; if (labelSelect) labelSelect.value = boxes[found].label_id; } else selectedBoxIdx=null;
+        updateBoxList(); redrawCanvas();
+      });
+    }
+
+    function redrawCanvas() {
+      if (!ctx && canvas) ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+      if (canvasImage && canvasImage.width) ctx.drawImage(canvasImage, 0, 0, canvas.width, canvas.height);
+      boxes.forEach((b, idx) => {
+        const x = b.x1*canvasScale, y = b.y1*canvasScale, w = (b.x2-b.x1)*canvasScale, h = (b.y2-b.y1)*canvasScale;
+        ctx.lineWidth = (idx===selectedBoxIdx)?3:2;
+        ctx.strokeStyle = (idx===selectedBoxIdx)?'red':'yellow';
+        ctx.strokeRect(x,y,w,h);
+        const lbl = `${b.label_id}:${CLASS_NAMES[b.label_id]||''}`;
+        ctx.fillStyle = 'rgba(0,0,0,0.6)';
+        const boxW = Math.min(200, ctx.measureText(lbl).width + 8);
+        ctx.fillRect(x, y-18, boxW, 18);
+        ctx.fillStyle = 'white'; ctx.font = '14px sans-serif';
+        ctx.fillText(lbl, x+4, y-4);
+      });
+    }
+
+    function updateBoxList() {
+      if (!boxListDiv) return;
+      boxListDiv.innerHTML = '';
+      boxes.forEach((b, idx) => {
+        const div = document.createElement('div'); div.className='box-item d-flex justify-content-between align-items-center';
+        const left = document.createElement('div'); left.innerHTML = `<strong>#${idx+1}</strong> (${b.x1},${b.y1}) — (${b.x2},${b.y2})`;
+        const right = document.createElement('div');
+        const selLabel = document.createElement('select'); selLabel.className='form-select form-select-sm'; selLabel.style.width='140px';
+        CLASS_NAMES.forEach((n,i)=>{ const o=document.createElement('option'); o.value=i; o.textContent=`${i}: ${n}`; if(i===b.label_id) o.selected=true; selLabel.appendChild(o); });
+        selLabel.addEventListener('change', (ev)=>{ b.label_id = parseInt(ev.target.value); redrawCanvas(); });
+        const delBtn = document.createElement('button'); delBtn.className='btn btn-sm btn-outline-danger ms-2'; delBtn.textContent='Delete';
+        delBtn.addEventListener('click', ()=>{ boxes.splice(idx,1); if (selectedBoxIdx===idx) selectedBoxIdx=null; updateBoxList(); redrawCanvas(); });
+        right.appendChild(selLabel); right.appendChild(delBtn);
+        if (idx===selectedBoxIdx) div.style.background='#fff3cd';
+        div.appendChild(left); div.appendChild(right); boxListDiv.appendChild(div);
+      });
+    }
+
+    // delete / cancel / save event wiring
+    document.getElementById('deleteBoxBtn').onclick = () => { if (selectedBoxIdx===null) return alert('No box selected'); boxes.splice(selectedBoxIdx,1); selectedBoxIdx=null; updateBoxList(); redrawCanvas(); };
+    document.getElementById('cancelCorrectionBtn').onclick = () => { if (bsModal) bsModal.hide(); };
+
+    document.getElementById('saveCorrectionBtn').addEventListener('click', async () => {
+      let imageName, imageW, imageH;
+      if (singleMode) { if (!singleImageB64) return alert('No single image loaded'); imageName = singleImageName || 'single_image'; imageW = canvasImage.width; imageH = canvasImage.height; }
+      else {
+        if (typeof currentBatchIndex !== 'number' || currentBatchIndex === null) return alert('No batch image selected');
+        if (!lastBatchData || !lastBatchData.results || !lastBatchData.results[currentBatchIndex]) return alert('No batch image data available');
+        const imgData = lastBatchData.results[currentBatchIndex]; imageName = imgData.image_name || `img_${currentBatchIndex}`; imageW = canvasImage.width; imageH = canvasImage.height;
+      }
+      const dataUrl = canvas.toDataURL('image/png'); const savedB64 = dataUrl.split(',')[1];
+      const outBoxes = boxes.map(b => ({ x1: Math.round(b.x1), y1: Math.round(b.y1), x2: Math.round(b.x2), y2: Math.round(b.y2), label_id: Number(b.label_id) }));
+      const payload = { image_name:imageName, image_b64:savedB64, image_width:imageW, image_height:imageH, boxes: outBoxes };
+      try {
+        const res = await fetch('/api/save_correction', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+        if (!res.ok) { const t = await res.text(); throw new Error(t||`HTTP ${res.status}`); }
+        const resp = await res.json();
+        if (!singleMode && lastBatchData && lastBatchData.results && lastBatchData.results[currentBatchIndex]) lastBatchData.results[currentBatchIndex].__corrected = true;
+        if (singleMode) {
+          let infoHtml = '<h6>Manual counts saved</h6>';
+          if (resp.manual_result) {
+            infoHtml += `<p>Manual count: ${resp.manual_result.manual_count}</p>`;
+            if (resp.manual_result.color_counts) infoHtml += '<ul>' + Object.entries(resp.manual_result.color_counts).map(([c,v]) => `<li>${c}: ${v}</li>`).join('') + '</ul>';
+            infoHtml += `<img class="img-preview mt-2" src="data:image/png;base64,${resp.manual_result.annotated_image_base64}">`;
+          }
+          document.getElementById('singleResult').innerHTML = infoHtml;
+        } else alert('Saved correction: ' + (resp.saved_label_file || 'saved'));
+        if (bsModal) bsModal.hide();
+      } catch (err) { alert('Failed to save correction: ' + err.message); }
+    });
+
+    // wire the top-level Process buttons (type="button" prevents native submit)
+    document.getElementById('singleProcessBtn').onclick = handleSingleProcess;
+    document.getElementById('batchProcessBtn').onclick = handleBatchProcess;
+
+  } catch (initErr) {
+    // if initialization throws, log it so the developer can see why handlers didn't attach
+    console.error('Initialization error:', initErr);
+    alert('Initialization error (see console).');
+  }
+});
+</script>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
