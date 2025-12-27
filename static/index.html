@@ -88,6 +88,11 @@
     .highlighted {
       background-color: var(--highlight-color);
     }
+
+    /* Progress area styling */
+    .processing-area { margin-top: 10px; }
+    .processing-caveat { margin-top: 8px; color: #ffd966; }
+    .processing-steps { margin-top: 8px; font-size: 0.9rem; color: #ddd; }
   </style>
 </head>
 <body>
@@ -225,6 +230,47 @@ document.addEventListener('DOMContentLoaded', () => {
       return Array.from(container.querySelectorAll('.color-checkbox:checked')).map(cb => cb.value);
     }
 
+    // small DOM helper to create progress UI
+    function createProgressArea(initialPct = 0) {
+      const wrapper = document.createElement('div');
+      wrapper.className = 'processing-area';
+      wrapper.innerHTML = `
+        <div class="progress" style="height: 22px;">
+          <div id="procBar" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" aria-valuemin="0" aria-valuemax="100" style="width: ${initialPct}%">${initialPct}%</div>
+        </div>
+        <div id="procSteps" class="processing-steps"></div>
+        <div id="procCaveat" class="processing-caveat"></div>
+      `;
+      return wrapper;
+    }
+
+    function updateProgressArea(container, pct, steps) {
+      const bar = container.querySelector('#procBar');
+      const stepsDiv = container.querySelector('#procSteps');
+      if (bar) {
+        // remove animated stripe when finalizing (so width transition is visible)
+        bar.classList.remove('progress-bar-animated');
+        bar.style.transition = 'width 600ms linear';
+        bar.style.width = pct + '%';
+        bar.textContent = pct + '%';
+      }
+      if (stepsDiv) {
+        if (Array.isArray(steps) && steps.length) {
+          stepsDiv.innerHTML = steps.map(s => `<div>${s.step || s.name || ''} — ${s.progress !== undefined ? s.progress + '%' : ''}</div>`).join('');
+        } else {
+          stepsDiv.innerHTML = '';
+        }
+      }
+    }
+
+    function setCaveat(container, text) {
+      const caveatDiv = container.querySelector('#procCaveat');
+      if (caveatDiv) {
+        if (text) caveatDiv.textContent = text;
+        else caveatDiv.textContent = '';
+      }
+    }
+
     // --- globals & DOM refs (already present because DOMContentLoaded) ---
     let CLASS_NAMES = [];
     let CLASS_NAME_TO_ID = {};
@@ -287,40 +333,79 @@ document.addEventListener('DOMContentLoaded', () => {
       const colors = JSON.stringify(getSelectedColors(form));
       const multiPlate = document.getElementById('multiPlateSingle').checked;
 
+      // Prepare UI progress area
+      const resultDiv = document.getElementById('singleResult');
+      resultDiv.innerHTML = ''; // clear
+      const prog = createProgressArea(5);
+      resultDiv.appendChild(prog);
+
+      // show indeterminate animation while request in flight
+      const bar = prog.querySelector('#procBar');
+      if (bar) {
+        bar.classList.add('progress-bar-animated');
+        bar.style.width = '5%';
+      }
+
       if (!multiPlate) {
         const fd = new FormData(form);
         fd.set('confidence', conf);
         fd.set('colors', colors);
         fd.set('multi_plate', 'false');
-        const resultDiv = document.getElementById('singleResult');
-        resultDiv.innerHTML = 'Processing...';
+
         try {
           const resp = await postFormData('/api/process', fd);
-          renderResults(resp, resultDiv);
+          // show returned progress if available
+          const pct = Number(resp.processing_progress || 100);
+          updateProgressArea(prog, pct, resp.processing_steps || []);
+          setCaveat(prog, resp.plate_detection_caveat || '');
+          // then render results below progress area
+          const resultsHtml = buildResultsHtml(resp);
+          // append results after a small delay for nicer transition
+          setTimeout(() => {
+            resultDiv.innerHTML = ''; // replace progress area
+            // re-insert progress area with final state + caveat
+            const finalProg = createProgressArea(pct);
+            resultDiv.appendChild(finalProg);
+            updateProgressArea(finalProg, pct, resp.processing_steps || []);
+            setCaveat(finalProg, resp.plate_detection_caveat || '');
+            // append results content
+            const wrapper = document.createElement('div');
+            wrapper.innerHTML = resultsHtml;
+            resultDiv.appendChild(wrapper);
+          }, 350);
         } catch (err) {
           resultDiv.innerHTML = `<div class="text-danger">Error: ${err.message}</div>`;
         }
         return;
       }
 
-      // multi-plate => get detections then open modal for manual splitting
+      // multi-plate => let backend detect plates and group detections; DO NOT open annotation modal
       try {
         const fd = new FormData();
         fd.append('image', file);
         fd.append('confidence', conf);
         fd.append('colors', colors);
         fd.append('multi_plate', 'true');
-        document.getElementById('singleResult').innerHTML = 'Processing (getting detections)...';
+
         const resp = await postFormData('/api/process', fd);
-        const imgB64 = resp.original_image_base64 || resp.annotated_image_base64;
-        const detections = resp.detections || [];
-        singleMode = true;
-        singleImageB64 = imgB64.startsWith('data:') ? imgB64.split(',')[1] : imgB64;
-        singleImageName = file.name || 'single_image';
-        openAnnotationModalForSingle(singleImageB64, singleImageName, detections);
-        document.getElementById('singleResult').innerHTML = `<div class="text-success">Detections loaded into editor (${detections.length}). Draw additional boxes if needed, then Save.</div>`;
+        const pct = Number(resp.processing_progress || 100);
+        updateProgressArea(prog, pct, resp.processing_steps || []);
+        setCaveat(prog, resp.plate_detection_caveat || '');
+        // render results
+        setTimeout(() => {
+          resultDiv.innerHTML = '';
+          const finalProg = createProgressArea(pct);
+          resultDiv.appendChild(finalProg);
+          updateProgressArea(finalProg, pct, resp.processing_steps || []);
+          setCaveat(finalProg, resp.plate_detection_caveat || '');
+          const resultsHtml = buildResultsHtml(resp);
+          const wrapper = document.createElement('div');
+          wrapper.innerHTML = resultsHtml;
+          resultDiv.appendChild(wrapper);
+        }, 350);
+
       } catch (err) {
-        document.getElementById('singleResult').innerHTML = `<div class="text-danger">Error getting detections: ${err.message}</div>`;
+        resultDiv.innerHTML = `<div class="text-danger">Error getting detections: ${err.message}</div>`;
       }
     }
 
@@ -331,35 +416,90 @@ document.addEventListener('DOMContentLoaded', () => {
       fd.set('colors', JSON.stringify(getSelectedColors(form)));
       fd.set('multi_plate', document.getElementById('multiPlateBatch').checked);
       const resultDiv = document.getElementById('batchResult');
-      resultDiv.innerHTML = 'Processing...';
+
+      // show global progress while batch runs
+      resultDiv.innerHTML = '';
+      const globalProg = createProgressArea(5);
+      resultDiv.appendChild(globalProg);
+      const bar = globalProg.querySelector('#procBar');
+      if (bar) {
+        bar.classList.add('progress-bar-animated');
+        bar.style.width = '5%';
+      }
+
       try {
         const data = await postFormData('/api/batch', fd);
+        // update global bar to 100% (backend processes synchronously)
+        updateProgressArea(globalProg, 100, []);
+        // store lastBatchData and render batch review
         lastBatchData = data;
-        renderBatchReview(data);
+        // render batch review below progress
+        setTimeout(() => {
+          resultDiv.innerHTML = '';
+          // show a final global progress and then the batch UI
+          const finalGlobal = createProgressArea(100);
+          resultDiv.appendChild(finalGlobal);
+          updateProgressArea(finalGlobal, 100, []);
+          // attach CSV/ZIP download buttons above batch UI
+          const container = document.createElement('div');
+          container.className = 'mt-3';
+          // CSV & ZIP anchors are included in the renderBatchReview UI; we forward csv/zip b64 up there.
+          resultDiv.appendChild(container);
+          renderBatchReview(data);
+        }, 300);
       } catch (err) {
         resultDiv.innerHTML = `<div class="text-danger">Error: ${err.message}</div>`;
       }
     }
 
     /* ---------- render helpers ---------- */
-    function renderResults(data, resultDiv) {
+    function buildResultsHtml(data) {
+      // Builds the HTML fragment for results (plates or single).
+      let html = '';
       if (data.plates) {
-        let html = "<h6>Results per Plate:</h6>";
+        html += "<h6>Results per Plate:</h6>";
         data.plates.forEach((plate, idx) => {
           html += `<div class="mt-3 p-2 border rounded">
             <h6>Plate ${idx+1}: ${plate.total_features} features</h6>
             <img class="img-preview" src="data:image/png;base64,${plate.annotated_image_base64}">
             <details><summary>Detections</summary><pre>${JSON.stringify(plate.detections, null, 2)}</pre></details>
+            ${plate.color_counts ? '<div><strong>Color counts:</strong><ul>' + Object.entries(plate.color_counts).map(([c,v])=>`<li>${c}: ${v}</li>`).join('') + '</ul></div>' : ''}
           </div>`;
         });
-        resultDiv.innerHTML = html;
+        if (data.plate_detection_caveat) {
+          html = `<div class="alert alert-warning mt-2" role="alert">${escapeHtml(data.plate_detection_caveat)}</div>` + html;
+        }
       } else {
         let imgHtml = `<img class="img-preview" src="data:image/png;base64,${data.annotated_image_base64}">`;
         let detailsHtml = `<details><summary>Detections</summary><pre>${JSON.stringify(data.detections, null, 2)}</pre></details>`;
         let colorHtml = '';
         if (data.color_counts) colorHtml = '<ul>' + Object.entries(data.color_counts).map(([c,v])=>`<li>${c}: ${v}</li>`).join('') + '</ul>';
-        resultDiv.innerHTML = `<h6>Results:</h6>${imgHtml}${detailsHtml}${colorHtml}`;
+        html += `<h6>Results:</h6>${imgHtml}${detailsHtml}${colorHtml}`;
       }
+      return html;
+    }
+
+    function escapeHtml(str) {
+      if (!str) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
+    function renderResults(data, resultDiv) {
+      // This uses the same builder but also injects caveat and progress if present
+      resultDiv.innerHTML = '';
+      const prog = createProgressArea(Number(data.processing_progress || 100));
+      resultDiv.appendChild(prog);
+      updateProgressArea(prog, Number(data.processing_progress || 100), data.processing_steps || []);
+      setCaveat(prog, data.plate_detection_caveat || '');
+      const resultsHtml = buildResultsHtml(data);
+      const wrapper = document.createElement('div');
+      wrapper.innerHTML = resultsHtml;
+      resultDiv.appendChild(wrapper);
     }
 
     function renderBatchReview(data) {
@@ -390,9 +530,20 @@ document.addEventListener('DOMContentLoaded', () => {
           </div>
         `;
         resultDiv.innerHTML = html;
+
+        // Insert per-image progress area (if available)
+        const batchInfoDiv = document.getElementById('batchInfo');
+        const pbar = createProgressArea(Number(imgData.processing_progress || 100));
+        batchInfoDiv.appendChild(pbar);
+        // Make final styling (remove animation and set to value)
+        updateProgressArea(pbar, Number(imgData.processing_progress || 100), imgData.processing_steps || []);
+        setCaveat(pbar, imgData.plate_detection_caveat || '');
+
         let infoHtml = `<details><summary>Detections (${imgData.total_features || (imgData.detections||[]).length})</summary><pre>${JSON.stringify(imgData.detections || [], null, 2)}</pre></details>`;
         if (imgData.color_counts) infoHtml += '<ul>' + Object.entries(imgData.color_counts).map(([c,v])=>`<li>${c}: ${v}</li>`).join('') + '</ul>';
-        document.getElementById('batchInfo').innerHTML = infoHtml;
+        const infoContainer = document.createElement('div');
+        infoContainer.innerHTML = infoHtml;
+        batchInfoDiv.appendChild(infoContainer);
 
         document.getElementById('prevBtn').onclick = () => { currentIndex = (currentIndex - 1 + data.results.length) % data.results.length; renderImage(); };
         document.getElementById('nextBtn').onclick = () => { currentIndex = (currentIndex + 1) % data.results.length; renderImage(); };
